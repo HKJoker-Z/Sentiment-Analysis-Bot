@@ -1,9 +1,5 @@
 # Web3 Social Media Sentiment Analyzer
 
-![Web3 Sentiment Analyzer](https://img.shields.io/badge/Status-Active-brightgreen)
-![Python](https://img.shields.io/badge/Python-3.7+-blue)
-![Streamlit](https://img.shields.io/badge/Streamlit-1.45.0-red)
-
 A powerful web application that analyzes sentiment in Web3-related discussions on Reddit. Track how blockchain communities feel about specific topics, cryptocurrencies, NFTs, and emerging technologies.
 
 ## 🚀 Features
