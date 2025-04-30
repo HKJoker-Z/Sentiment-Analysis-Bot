@@ -1,0 +1,41 @@
+# --- Sensitive Information ---
+# NEVER commit your API keys or secrets!
+.env
+
+# --- Virtual Environment ---
+# Common virtual environment folders
+venv/
+*/venv/
+env/
+*/env/
+.venv/
+*/.venv/
+
+# --- Python Cache ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- IDE / Editor Specific ---
+# Example: VSCode
+.vscode/
+# Example: PyCharm
+.idea/
+
+# --- OS Specific ---
+# Example: macOS
+.DS_Store
+# Example: Windows
+Thumbs.db
+
+# --- Log files ---
+*.log
+
+# --- Streamlit specific (if any generated) ---
+# .streamlit/secrets.toml # If you ever use Streamlit secrets management
+
+# --- Other potentially generated files ---
+# *.csv # If you generate data files you don't want to track
+# *.db
+# *.sqlite3
