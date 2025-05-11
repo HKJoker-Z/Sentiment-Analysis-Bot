@@ -32,6 +32,10 @@ Thumbs.db
 # --- Log files ---
 *.log
 
+# --- Trained models ---
+src/fine_tune_model/
+./src/fine_tune_model/*
+
 # --- Streamlit specific (if any generated) ---
 # .streamlit/secrets.toml # If you ever use Streamlit secrets management
 
