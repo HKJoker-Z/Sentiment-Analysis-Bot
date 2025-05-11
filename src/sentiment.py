@@ -1,25 +1,76 @@
 import pandas as pd
 from transformers import pipeline
 import torch
+import os
+import torch
+import torch.nn.functional as F
+from transformers import AutoTokenizer, AutoModel
 
 class SentimentAnalyzer:
-    def __init__(self, model_name="distilbert-base-uncased-finetuned-sst-2-english"):
+    def __init__(self, model_name=None):
         """
         Initialize sentiment analyzer
         
         Parameters:
-            model_name (str): Pre-trained model name, default is DistilBERT optimized for sentiment analysis
+            model_name (str): Pre-trained model name or path to fine-tuned model
         """
-        # Force CPU usage to avoid GPU issues
-        self.device = -1
-        
-        print(f"Loading sentiment analysis model: {model_name}...")
-        # Initialize transformers sentiment analysis pipeline
-        self.sentiment_pipeline = pipeline(
-            "sentiment-analysis", 
-            model=model_name, 
-            device=self.device
-        )
+        # Check for contrastively fine-tuned model
+        fine_tuned_path = "./fine_tuned_model"
+        if model_name is None and os.path.exists(fine_tuned_path):
+            print(f"Using contrastively fine-tuned Web3 model from {fine_tuned_path}")
+            self.use_contrastive_model = True
+            
+            # Load tokenizer and model
+            self.tokenizer = AutoTokenizer.from_pretrained(fine_tuned_path)
+            self.model = AutoModel.from_pretrained(fine_tuned_path)
+            
+            # Load classifier head - fix for PyTorch 2.6+ security changes
+            classifier_path = os.path.join(fine_tuned_path, "classifier_head.pt")
+            if os.path.exists(classifier_path):
+                try:
+                    # Add safe globals to allow torch.nn.modules.linear.Linear to be unpickled
+                    torch.serialization.add_safe_globals(["torch.nn.modules.linear.Linear"])
+                    self.classifier = torch.load(classifier_path)
+                except Exception as e:
+                    print(f"Failed to load classifier using default approach: {e}")
+                    # Fallback method using weights_only=False (only if the file is trusted)
+                    try:
+                        self.classifier = torch.load(classifier_path, weights_only=False)
+                    except Exception as inner_e:
+                        print(f"Failed to load classifier with fallback: {inner_e}")
+                        # Create a new classifier head if loading fails
+                        print("Creating new classifier head")
+                        self.classifier = torch.nn.Linear(self.model.config.hidden_size, 2)
+            else:
+                # If no classifier head found, create a simple one
+                print("No classifier head found, creating new one")
+                self.classifier = torch.nn.Linear(self.model.config.hidden_size, 2)
+            
+            # Set device
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.model.to(self.device)
+            self.classifier.to(self.device)
+            
+            # Set model to evaluation mode
+            self.model.eval()
+            self.classifier.eval()
+            
+        else:
+            # Default: use Hugging Face pipeline
+            model_name = model_name or "distilbert-base-uncased-finetuned-sst-2-english"
+            self.use_contrastive_model = False
+            # Force CPU usage to avoid GPU issues
+            self.device = -1
+            
+            print(f"Loading sentiment analysis model: {model_name}...")
+            # Initialize transformers sentiment analysis pipeline
+            from transformers import pipeline
+            self.sentiment_pipeline = pipeline(
+                "sentiment-analysis", 
+                model=model_name, 
+                device=self.device
+            )
+            
         print("Model loading complete!")
         
     def analyze_batch(self, texts, batch_size=16):
@@ -43,12 +94,52 @@ class SentimentAnalyzer:
         if not valid_texts:
             return []
             
-        # Batch sentiment analysis
-        results = []
-        for i in range(0, len(valid_texts), batch_size):
-            batch_texts = valid_texts[i:i+batch_size]
-            batch_results = self.sentiment_pipeline(batch_texts)
-            results.extend(batch_results)
+        if self.use_contrastive_model:
+            # Process with our contrastive model
+            results = []
+            
+            with torch.no_grad():
+                for i in range(0, len(valid_texts), batch_size):
+                    batch_texts = valid_texts[i:i+batch_size]
+                    
+                    # Tokenize
+                    encoded = self.tokenizer(
+                        batch_texts,
+                        truncation=True,
+                        padding=True,
+                        return_tensors="pt"
+                    ).to(self.device)
+                    
+                    # Get model outputs
+                    outputs = self.model(**encoded)
+                    cls_embeds = outputs.last_hidden_state[:, 0, :]
+                    
+                    # Apply classifier
+                    logits = self.classifier(cls_embeds)
+                    probs = F.softmax(logits, dim=1)
+                    
+                    # Convert to expected format
+                    for j in range(len(batch_texts)):
+                        negative_prob = probs[j, 0].item()
+                        positive_prob = probs[j, 1].item()
+                        
+                        if positive_prob > negative_prob:
+                            results.append({
+                                "label": "POSITIVE", 
+                                "score": positive_prob
+                            })
+                        else:
+                            results.append({
+                                "label": "NEGATIVE", 
+                                "score": negative_prob
+                            })
+        else:
+            # Process with standard pipeline
+            results = []
+            for i in range(0, len(valid_texts), batch_size):
+                batch_texts = valid_texts[i:i+batch_size]
+                batch_results = self.sentiment_pipeline(batch_texts)
+                results.extend(batch_results)
         
         # Map results back to original indices
         full_results = [{"label": "NEUTRAL", "score": 0.5} for _ in range(len(texts))]
